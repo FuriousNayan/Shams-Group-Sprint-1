@@ -2,9 +2,9 @@
 **Date:** _2/5/2026_
 
 ### Alex
-- **What I did:** [Yesterday or since last standup]
-- **What I'm doing:** [Today's focus]
-- **Blocked?** [Yes/No — if yes, what?]
+- **What I did:** Yesterday: Began brainstorming the game idea, created github repo, 
+- **What I'm doing:** Today: Worked on code, figuring out Github and Vscode connection
+- **Blocked?** No
 
 ### Sham
 - **What I did:** Yesterday: Began brainstorming the game idea
@@ -12,9 +12,9 @@
 - **Blocked?** No
 
 ### Elizabeth
-- **What I did:** 
-- **What I'm doing:** 
-- **Blocked?** 
+- **What I did:** Yesterday: Began brainstorming the game idea, assigned roles
+- **What I'm doing:** Today: Desigining visual aspects of the game
+- **Blocked?** No
 
 ### Melo
 - **What I did:** Yesterday: Began brainstorming the game idea
