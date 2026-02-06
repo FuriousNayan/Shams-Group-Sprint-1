@@ -2,14 +2,28 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 // ======================
+// RESIZE TO FULL SCREEN
+// ======================
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+// ======================
 // GAME STATE
 // ======================
 let score = 0;
 let lives = 3;
 let gameOver = false;
+let paused = false;
 let fireCooldown = 0;
 let fireRate = 20;
 let wave = 1;
+let lastWave = 10; // win after this wave
+let upgradeMessageTimer = 0;
+let multiShot = false;
 
 // ======================
 // PLAYER
@@ -35,6 +49,14 @@ document.addEventListener("keydown", e => {
 
   if (key === "r" && gameOver) {
     resetGame();
+  }
+
+  if (key === "p") {
+    tryUpgrade();
+  }
+
+  if (key === "escape") {
+    paused = !paused;
   }
 });
 
@@ -74,34 +96,65 @@ function spawnWave() {
 spawnWave();
 
 // ======================
+// UPGRADE LOGIC
+// ======================
+function tryUpgrade() {
+  if (score < 100) {
+    upgradeMessageTimer = 60; // ~1 second at 60fps
+    return;
+  }
+
+  score -= 100;
+
+  if (!multiShot) {
+    multiShot = true; // first upgrade: multi-shot
+  } else {
+    fireRate = Math.max(5, fireRate - 5); // later upgrades: faster fire
+  }
+}
+
+// ======================
 // UPDATE
 // ======================
 function update() {
-  if (gameOver) return;
+  if (gameOver || paused) return;
 
   // Player movement
   if (keys["a"] && player.x > 0) player.x -= player.speed;
   if (keys["d"] && player.x < canvas.width - player.width)
     player.x += player.speed;
+  if (keys["w"] && player.y > canvas.height * 0.6)
+    player.y -= player.speed;
+  if (keys["s"] && player.y < canvas.height - player.height)
+    player.y += player.speed;
 
   // Shooting
   if (keys[" "] && fireCooldown <= 0) {
-    bullets.push({
-      x: player.x + player.width / 2 - 2,
-      y: player.y,
-      width: 4,
-      height: 10
-    });
+    if (multiShot) {
+      bullets.push({
+        x: player.x + player.width / 2 - 10,
+        y: player.y,
+        width: 4,
+        height: 10
+      });
+      bullets.push({
+        x: player.x + player.width / 2 + 6,
+        y: player.y,
+        width: 4,
+        height: 10
+      });
+    } else {
+      bullets.push({
+        x: player.x + player.width / 2 - 2,
+        y: player.y,
+        width: 4,
+        height: 10
+      });
+    }
     fireCooldown = fireRate;
   }
 
   fireCooldown--;
-
-  // Upgrade
-  if (keys["p"] && score >= 100) {
-    fireRate = Math.max(5, fireRate - 5);
-    score -= 100;
-  }
 
   // Move bullets
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -117,6 +170,7 @@ function update() {
   // Enemy movement + shooting
   enemies.forEach(e => {
     e.x += e.dx;
+    e.y += 0.1 * wave; // slow downward drift
 
     if (Math.random() < 0.002 * wave) {
       enemyBullets.push({
@@ -162,8 +216,12 @@ function update() {
     if (hit(e, player)) gameOver = true;
   });
 
-  // Next wave
+  // Next wave / win condition
   if (enemies.length === 0) {
+    if (wave >= lastWave) {
+      gameOver = true;
+      return;
+    }
     wave++;
     spawnWave();
   }
@@ -188,6 +246,48 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.textBaseline = "top";
 
+  // Game Over / Win Screen
+  if (gameOver) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#00ff66";
+
+    ctx.font = "70px monospace";
+    const title = wave >= lastWave ? "YOU WIN!" : "GAME OVER";
+    ctx.fillText(title, canvas.width / 2, canvas.height / 2 - 150);
+
+    ctx.font = "50px monospace";
+    ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 - 40);
+
+    ctx.font = "40px monospace";
+    ctx.fillText(`Wave Reached: ${wave}`, canvas.width / 2, canvas.height / 2 + 40);
+
+    ctx.font = "28px monospace";
+    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 140);
+
+    ctx.textAlign = "start";
+    return;
+  }
+
+  // Pause Screen
+  if (paused) {
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#00ff66";
+    ctx.font = "60px monospace";
+    ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
+
+    ctx.font = "24px monospace";
+    ctx.fillText("Press ESC to Resume", canvas.width / 2, canvas.height / 2 + 60);
+
+    ctx.textAlign = "start";
+    return;
+  }
+
   // Player
   ctx.fillStyle = "#00ff66";
   ctx.fillRect(player.x, player.y, player.width, player.height);
@@ -203,25 +303,22 @@ function draw() {
   ctx.fillStyle = "#00aa00";
   enemies.forEach(e => ctx.fillRect(e.x, e.y, e.width, e.height));
 
-  // UI (FIXED FONT)
+  // UI
   ctx.fillStyle = "#00ff66";
-  ctx.font = "16px monospace";
+  ctx.font = "20px monospace";
+  ctx.textAlign = "left";
+  ctx.fillText(`Score: ${score}`, 20, 20);
+  ctx.fillText(`Lives: ${lives}`, 20, 50);
+  ctx.fillText(`Wave: ${wave}`, 20, 80);
 
-  ctx.fillText(`Score: ${score}`, 10, 10);
-  ctx.fillText(`Lives: ${lives}`, 10, 30);
-  ctx.fillText(`Wave: ${wave}`, 10, 50);
-
-  // Game Over Screen
-  if (gameOver) {
+  // Upgrade message
+  if (upgradeMessageTimer > 0) {
+    ctx.font = "24px monospace";
+    ctx.fillStyle = "yellow";
     ctx.textAlign = "center";
-    ctx.font = "40px monospace";
-    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 40);
-
-    ctx.font = "20px monospace";
-    ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2);
-    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 40);
-
-    ctx.textAlign = "start";
+    ctx.fillText("Not enough points!", canvas.width / 2, canvas.height - 80);
+    ctx.textAlign = "left";
+    upgradeMessageTimer--;
   }
 }
 
@@ -236,7 +333,11 @@ function resetGame() {
   bullets.length = 0;
   enemyBullets.length = 0;
   gameOver = false;
+  paused = false;
+  multiShot = false;
+  upgradeMessageTimer = 0;
   player.x = canvas.width / 2 - 20;
+  player.y = canvas.height - 60;
   spawnWave();
 }
 
