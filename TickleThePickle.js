@@ -1,62 +1,61 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const startScreen = document.getElementById("startScreen");
+
+let gameStarted = false;
+let paused = false;
 
 // ======================
-// RESIZE TO FULL SCREEN
+// IMAGES
 // ======================
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-resizeCanvas();
-window.addEventListener("resize", resizeCanvas);
+const playerImg = new Image();
+playerImg.src = "https://png.pngtree.com/png-vector/20241016/ourlarge/pngtree-vampire-cartoon-png-image_14089958.png";
+
+const pickleImg = new Image();
+pickleImg.src = "https://www.clipartmax.com/png/middle/15-153390_image-result-for-pickle-clipart-food-prints-family-transparent-background-pickle-clipart.png";
+
+const strongPickleImg = new Image();
+strongPickleImg.src = "https://img.freepik.com/premium-psd/png-pickled-cucumber-transparent-background_53876-497988.jpg";
+
+const bossPickleImg = new Image();
+bossPickleImg.src = "https://png.pngtree.com/png-vector/20240528/ourmid/pngtree-cartoon-pickle-character-with-big-eyes-png-image_12526411.png";
+
+const explosionImg = new Image();
+explosionImg.src = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ5MsJ_CSDz6qeaC3vBwG8ETNKHBaMeefEO2g&s";
 
 // ======================
 // GAME STATE
 // ======================
-let score = 0;
-let lives = 3;
-let gameOver = false;
-let paused = false;
-let fireCooldown = 0;
-let fireRate = 20;
-let wave = 1;
-let lastWave = 10; // win after this wave
-let upgradeMessageTimer = 0;
-let multiShot = false;
+let score, lives, gameOver, fireCooldown, fireRate, wave, flashTimer;
 
 // ======================
 // PLAYER
 // ======================
 const player = {
-  x: canvas.width / 2 - 20,
-  y: canvas.height - 60,
   width: 40,
   height: 20,
-  speed: 6
+  speed: 6,
+  x: 0,
+  y: 0
 };
 
 // ======================
 // INPUT
 // ======================
 const keys = {};
-
 document.addEventListener("keydown", e => {
-  const key = e.key.toLowerCase();
-  keys[key] = true;
+  keys[e.key.toLowerCase()] = true;
 
-  if (key === "q") gameOver = true;
+  if (e.code === "Space") e.preventDefault();
 
-  if (key === "r" && gameOver) {
-    resetGame();
-  }
-
-  if (key === "p") {
-    tryUpgrade();
-  }
-
-  if (key === "escape") {
+  // Pause
+  if (e.key === "Escape" && gameStarted && !gameOver) {
     paused = !paused;
+  }
+
+  // Restart
+  if (e.key.toLowerCase() === "r" && gameOver) {
+    resetGame();
   }
 });
 
@@ -67,8 +66,9 @@ document.addEventListener("keyup", e => {
 // ======================
 // PROJECTILES
 // ======================
-const bullets = [];
-const enemyBullets = [];
+let bullets = [];
+let enemyBullets = [];
+let explosions = [];
 
 // ======================
 // ENEMIES
@@ -82,95 +82,104 @@ function spawnWave() {
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
+      let strong = Math.random() < 0.2;
+
       enemies.push({
         x: 80 + c * 70,
         y: 60 + r * 50,
-        width: 30,
-        height: 20,
-        dx: wave
+        width: 40,
+        height: 30,
+        dx: 1 + wave * 0.3,
+        hp: strong ? 3 : 1,
+        img: strong ? strongPickleImg : pickleImg,
+        wobble: Math.random() * 10,
+        boss: false
       });
     }
   }
 }
 
-spawnWave();
+// ======================
+// RESET GAME
+// ======================
+function resetGame() {
+  score = 0;
+  lives = 3;
+  fireRate = 20;
+  fireCooldown = 0;
+  wave = 1;
+  gameOver = false;
+  paused = false;
+  flashTimer = 0;
+
+  bullets = [];
+  enemyBullets = [];
+  explosions = [];
+
+  player.x = canvas.width / 2 - player.width / 2;
+  player.y = canvas.height - 60;
+
+  spawnWave();
+}
 
 // ======================
-// UPGRADE LOGIC
+// START GAME
 // ======================
-function tryUpgrade() {
-  if (score < 100) {
-    upgradeMessageTimer = 60; // ~1 second at 60fps
-    return;
-  }
+startScreen.addEventListener("click", () => {
+  startScreen.style.display = "none";
+  gameStarted = true;
+  resetGame();
+  loop();
+});
 
-  score -= 100;
-
-  if (!multiShot) {
-    multiShot = true; // first upgrade: multi-shot
-  } else {
-    fireRate = Math.max(5, fireRate - 5); // later upgrades: faster fire
-  }
+// ======================
+// COLLISION
+// ======================
+function hit(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
 }
 
 // ======================
 // UPDATE
 // ======================
 function update() {
-  if (gameOver || paused) return;
+  if (!gameStarted || gameOver || paused) return;
 
-  // Player movement
+  // Movement
   if (keys["a"] && player.x > 0) player.x -= player.speed;
-  if (keys["d"] && player.x < canvas.width - player.width)
-    player.x += player.speed;
-  if (keys["w"] && player.y > canvas.height * 0.6)
-    player.y -= player.speed;
-  if (keys["s"] && player.y < canvas.height - player.height)
-    player.y += player.speed;
+  if (keys["d"] && player.x < canvas.width - player.width) player.x += player.speed;
 
   // Shooting
   if (keys[" "] && fireCooldown <= 0) {
-    if (multiShot) {
-      bullets.push({
-        x: player.x + player.width / 2 - 10,
-        y: player.y,
-        width: 4,
-        height: 10
-      });
-      bullets.push({
-        x: player.x + player.width / 2 + 6,
-        y: player.y,
-        width: 4,
-        height: 10
-      });
-    } else {
-      bullets.push({
-        x: player.x + player.width / 2 - 2,
-        y: player.y,
-        width: 4,
-        height: 10
-      });
-    }
+    bullets.push({
+      x: player.x + player.width / 2 - 2,
+      y: player.y,
+      width: 4,
+      height: 10
+    });
     fireCooldown = fireRate;
   }
-
   fireCooldown--;
 
-  // Move bullets
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    bullets[i].y -= 10;
-    if (bullets[i].y < 0) bullets.splice(i, 1);
+  // Upgrade (fire rate)
+  if (keys["p"] && score >= 100) {
+    fireRate = Math.max(5, fireRate - 5);
+    score -= 100;
+    keys["p"] = false; // prevent holding
   }
 
-  for (let i = enemyBullets.length - 1; i >= 0; i--) {
-    enemyBullets[i].y += 6;
-    if (enemyBullets[i].y > canvas.height) enemyBullets.splice(i, 1);
-  }
+  bullets.forEach(b => (b.y -= 10));
+  enemyBullets.forEach(b => (b.y += 6));
 
-  // Enemy movement + shooting
+  // Enemy movement
   enemies.forEach(e => {
     e.x += e.dx;
-    e.y += 0.1 * wave; // slow downward drift
+    e.wobble += 0.1;
 
     if (Math.random() < 0.002 * wave) {
       enemyBullets.push({
@@ -190,53 +199,45 @@ function update() {
     });
   }
 
-  // Bullet collision (safe reverse loops)
-  for (let b = bullets.length - 1; b >= 0; b--) {
-    for (let e = enemies.length - 1; e >= 0; e--) {
-      if (hit(bullets[b], enemies[e])) {
-        bullets.splice(b, 1);
-        enemies.splice(e, 1);
-        score += 10;
-        break;
+  // Bullet collisions
+  bullets.forEach((b, bi) => {
+    enemies.forEach((e, ei) => {
+      if (hit(b, e)) {
+        bullets.splice(bi, 1);
+        e.hp--;
+
+        if (e.hp <= 0) {
+          explosions.push({ x: e.x, y: e.y, timer: 20 });
+          enemies.splice(ei, 1);
+          score += e.boss ? 200 : 10;
+        }
       }
-    }
-  }
-
-  // Enemy bullet collision
-  for (let i = enemyBullets.length - 1; i >= 0; i--) {
-    if (hit(enemyBullets[i], player)) {
-      enemyBullets.splice(i, 1);
-      lives--;
-      if (lives <= 0) gameOver = true;
-    }
-  }
-
-  // Enemy hits player
-  enemies.forEach(e => {
-    if (hit(e, player)) gameOver = true;
+    });
   });
 
-  // Next wave / win condition
-  if (enemies.length === 0) {
-    if (wave >= lastWave) {
-      gameOver = true;
-      return;
+  // Player hit
+  enemyBullets.forEach((b, bi) => {
+    if (hit(b, player)) {
+      enemyBullets.splice(bi, 1);
+      lives--;
+      flashTimer = 10;
+      if (lives <= 0) gameOver = true;
     }
+  });
+
+  // Explosion timer
+  explosions.forEach((ex, i) => {
+    ex.timer--;
+    if (ex.timer <= 0) explosions.splice(i, 1);
+  });
+
+  if (flashTimer > 0) flashTimer--;
+
+  // Next wave
+  if (enemies.length === 0) {
     wave++;
     spawnWave();
   }
-}
-
-// ======================
-// COLLISION
-// ======================
-function hit(a, b) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
 }
 
 // ======================
@@ -244,53 +245,26 @@ function hit(a, b) {
 // ======================
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.textBaseline = "top";
 
-  // Game Over / Win Screen
-  if (gameOver) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#00ff66";
-
-    ctx.font = "70px monospace";
-    const title = wave >= lastWave ? "YOU WIN!" : "GAME OVER";
-    ctx.fillText(title, canvas.width / 2, canvas.height / 2 - 150);
-
-    ctx.font = "50px monospace";
-    ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 - 40);
-
-    ctx.font = "40px monospace";
-    ctx.fillText(`Wave Reached: ${wave}`, canvas.width / 2, canvas.height / 2 + 40);
-
-    ctx.font = "28px monospace";
-    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 140);
-
-    ctx.textAlign = "start";
-    return;
-  }
-
-  // Pause Screen
-  if (paused) {
-    ctx.fillStyle = "rgba(0,0,0,0.7)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#00ff66";
-    ctx.font = "60px monospace";
-    ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
-
-    ctx.font = "24px monospace";
-    ctx.fillText("Press ESC to Resume", canvas.width / 2, canvas.height / 2 + 60);
-
-    ctx.textAlign = "start";
-    return;
-  }
-
-  // Player
+  // UI
+  ctx.font = "16px monospace";
   ctx.fillStyle = "#00ff66";
-  ctx.fillRect(player.x, player.y, player.width, player.height);
+  ctx.fillText(`Score: ${score}`, 10, 20);
+  ctx.fillText(`Lives: ${lives}`, 10, 40);
+  ctx.fillText(`Wave: ${wave}`, 10, 60);
+
+  if (paused) {
+    ctx.font = "30px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
+    ctx.textAlign = "left";
+    return;
+  }
+
+  // Player (flash when hit)
+  if (flashTimer % 2 === 0) {
+    ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+  }
 
   // Bullets
   ctx.fillStyle = "yellow";
@@ -300,45 +274,24 @@ function draw() {
   enemyBullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
 
   // Enemies
-  ctx.fillStyle = "#00aa00";
-  enemies.forEach(e => ctx.fillRect(e.x, e.y, e.width, e.height));
+  enemies.forEach(e => {
+    let wobbleY = Math.sin(e.wobble) * 3;
+    ctx.drawImage(e.img, e.x, e.y + wobbleY, e.width, e.height);
+  });
 
-  // UI
-  ctx.fillStyle = "#00ff66";
-  ctx.font = "20px monospace";
-  ctx.textAlign = "left";
-  ctx.fillText(`Score: ${score}`, 20, 20);
-  ctx.fillText(`Lives: ${lives}`, 20, 50);
-  ctx.fillText(`Wave: ${wave}`, 20, 80);
+  // Explosions
+  explosions.forEach(ex => {
+    ctx.drawImage(explosionImg, ex.x, ex.y, 40, 40);
+  });
 
-  // Upgrade message
-  if (upgradeMessageTimer > 0) {
-    ctx.font = "24px monospace";
-    ctx.fillStyle = "yellow";
+  if (gameOver) {
+    ctx.font = "40px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("Not enough points!", canvas.width / 2, canvas.height - 80);
+    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2);
+    ctx.font = "18px monospace";
+    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 40);
     ctx.textAlign = "left";
-    upgradeMessageTimer--;
   }
-}
-
-// ======================
-// RESET
-// ======================
-function resetGame() {
-  score = 0;
-  lives = 3;
-  wave = 1;
-  fireRate = 20;
-  bullets.length = 0;
-  enemyBullets.length = 0;
-  gameOver = false;
-  paused = false;
-  multiShot = false;
-  upgradeMessageTimer = 0;
-  player.x = canvas.width / 2 - 20;
-  player.y = canvas.height - 60;
-  spawnWave();
 }
 
 // ======================
@@ -349,5 +302,3 @@ function loop() {
   draw();
   requestAnimationFrame(loop);
 }
-
-loop();
